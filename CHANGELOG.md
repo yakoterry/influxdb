@@ -5,6 +5,7 @@
 1. [18888](https://github.com/influxdata/influxdb/pull/18888): Add event source to influx stack operations
 1. [18910](https://github.com/influxdata/influxdb/pull/18910): Add uninstall functionality for stacks
 1. [18912](https://github.com/influxdata/influxdb/pull/18912): Drop deprecated influx pkg command tree
+1. [18841](https://github.com/influxdata/influxdb/pull/18841): Limit query response sizes for queries built in QueryBuilder by requiring an aggregate window
 
 ### Bug Fixes
 
