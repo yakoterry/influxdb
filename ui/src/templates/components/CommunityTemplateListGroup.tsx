@@ -21,6 +21,10 @@ interface Props {
 }
 
 const CommunityTemplateListGroup: FC<Props> = ({title, count, children}) => {
+  if (!React.Children.count(children)) {
+    return null
+  }
+
   const [mode, setMode] = useState<'expanded' | 'collapsed'>('collapsed')
   const groupClassName = classnames('community-templates--list-group', {
     [`community-templates--list-group__${mode}`]: mode,
@@ -29,8 +33,7 @@ const CommunityTemplateListGroup: FC<Props> = ({title, count, children}) => {
   const handleToggleMode = () => {
     if (mode === 'expanded') {
       setMode('collapsed')
-      // don't allow expansion if there is nothing to expand
-    } else if (count) {
+    } else {
       setMode('expanded')
     }
   }
@@ -49,7 +52,7 @@ const CommunityTemplateListGroup: FC<Props> = ({title, count, children}) => {
           element={HeadingElement.Div}
           appearance={HeadingElement.H6}
           className="community-templates--list-counter"
-        >{`(${count})`}</Heading>
+        >{`(${count} selected)`}</Heading>
       </div>
       {mode === 'expanded' && (
         <FlexBox
