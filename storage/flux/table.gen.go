@@ -18,6 +18,7 @@ import (
 	"github.com/influxdata/influxdb/v2"
 	"github.com/influxdata/influxdb/v2/models"
 	storage "github.com/influxdata/influxdb/v2/storage/reads"
+	"github.com/influxdata/influxdb/v2/storage/reads/datatypes"
 	"github.com/influxdata/influxdb/v2/tsdb/cursors"
 )
 
@@ -706,24 +707,73 @@ func (t *floatGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *floatGroupTable) advance() bool {
-RETRY:
-	a := t.cur.Next()
-	l := a.Len()
-	if l == 0 {
-		if t.advanceCursor() {
-			goto RETRY
+	var a *cursors.FloatArray
+	var l int
+	for {
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			break
 		}
-
-		return false
+		if !t.advanceCursor() {
+			return false
+		}
 	}
 
-	// Retrieve the buffer for the data to avoid allocating
-	// additional slices. If the buffer is still being used
-	// because the references were retained, then we will
-	// allocate a new buffer.
-	cr := t.allocateBuffer(l)
-	cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
-	cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+	// handle the group without aggregate case
+	if t.gc.Aggregate() == nil {
+		// Retrieve the buffer for the data to avoid allocating
+		// additional slices. If the buffer is still being used
+		// because the references were retained, then we will
+		// allocate a new buffer.
+		cr := t.allocateBuffer(l)
+		cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
+		cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+		t.appendTags(cr)
+		t.appendBounds(cr)
+		return true
+	}
+
+	// group with aggregate
+	var value float64 = 0
+	var timestamp int64 = 0
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeFirst {
+		timestamp = math.MaxInt64
+	} else if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+		timestamp = math.MinInt64
+	}
+	for {
+		for i := 0; i < l; i++ {
+			switch t.gc.Aggregate().Type {
+			case datatypes.AggregateTypeSum:
+				fallthrough
+			case datatypes.AggregateTypeCount:
+				value += a.Values[i]
+				timestamp = a.Timestamps[i]
+			case datatypes.AggregateTypeFirst:
+				if a.Timestamps[i] < timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			case datatypes.AggregateTypeLast:
+				if a.Timestamps[i] > timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			}
+		}
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			continue
+		}
+		if !t.advanceCursor() {
+			break
+		}
+	}
+	cr := t.allocateBuffer(1)
+	cr.cols[timeColIdx] = arrow.NewInt([]int64{timestamp}, t.alloc)
+	cr.cols[valueColIdx] = t.toArrowBuffer([]float64{value})
 	t.appendTags(cr)
 	t.appendBounds(cr)
 	return true
