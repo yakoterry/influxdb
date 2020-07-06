@@ -2,26 +2,97 @@
 	{
 		"Name":"Float",
 		"name":"float",
-		"Type":"float64"
+		"Type":"float64",
+		"ArrowType":"Float64",
+		"Aggs": [
+			{
+		 		"Name":"Count",
+				"AccType":"int64",
+				"AccTypeName":"Integer",
+		 		"AccInit":"0",
+				"Accumulate":"acc++"
+		 	},
+			{
+		 		"Name":"Sum",
+				"AccType":"float64",
+				"AccTypeName":"Float",
+		 		"AccInit":"0",
+				"Accumulate":"acc += a.Values[rowIdx]"
+		 	}
+		]
 	},
 	{
 		"Name":"Integer",
 		"name":"integer",
-		"Type":"int64"
+		"Type":"int64",
+		"ArrowType":"Int64",
+		"Aggs": [
+			{
+		 		"Name":"Count",
+				"AccType":"int64",
+				"AccTypeName":"Integer",
+		 		"AccInit":"0",
+				"Accumulate":"acc++"
+		 	},
+			{
+		 		"Name":"Sum",
+				"AccType":"int64",
+				"AccTypeName":"Integer",
+		 		"AccInit":"0",
+				"Accumulate":"acc += a.Values[rowIdx]"
+		 	}
+		]
 	},
 	{
 		"Name":"Unsigned",
 		"name":"unsigned",
-		"Type":"uint64"
+		"Type":"uint64",
+		"ArrowType":"Uint64",
+		"Aggs": [
+			{
+		 		"Name":"Count",
+				"AccType":"int64",
+				"AccTypeName":"Integer",
+		 		"AccInit":"0",
+				"Accumulate":"acc++"
+		 	},
+			{
+		 		"Name":"Sum",
+				"AccType":"uint64",
+				"AccTypeName":"Unsigned",
+		 		"AccInit":"0",
+				"Accumulate":"acc += a.Values[rowIdx]"
+		 	}
+		]
 	},
 	{
 		"Name":"String",
 		"name":"string",
-		"Type":"string"
+		"Type":"string",
+		"ArrowType":"Binary",
+		"Aggs": [
+			{
+		 		"Name":"Count",
+				"AccType":"int64",
+				"AccTypeName":"Integer",
+		 		"AccInit":"0",
+				"Accumulate":"acc++"
+		 	}
+		]
 	},
 	{
 		"Name":"Boolean",
 		"name":"boolean",
-		"Type":"bool"
+		"Type":"bool",
+		"ArrowType":"Boolean",
+		"Aggs": [
+			{
+		 		"Name":"Count",
+				"AccType":"int64",
+				"AccTypeName":"Integer",
+		 		"AccInit":"0",
+				"Accumulate":"acc++"
+		 	}
+		]
 	}
 ]

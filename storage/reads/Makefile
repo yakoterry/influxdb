@@ -4,7 +4,7 @@ TARGETS = array_cursor.gen.go
 # List any source files used to generate the targets here
 SOURCES = gen.go \
 	array_cursor.gen.go.tmpl \
-	array_cursor.gen.go.tmpldata \
+	array_cursor_test.gen.go.tmpl \
 	types.tmpldata
 
 # List any directories that have their own Makefile here
