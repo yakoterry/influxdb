@@ -1,5 +1,5 @@
 import React, {Component} from 'react'
-import {withRouter, WithRouterProps} from 'react-router'
+import {withRouter, RouteComponentProps} from 'react-router-dom'
 import {connect} from 'react-redux'
 
 // Components
@@ -20,7 +20,7 @@ import {
 import SettingsTabbedPage from 'src/settings/components/SettingsTabbedPage'
 import SettingsHeader from 'src/settings/components/SettingsHeader'
 
-import {setActiveCommunityTemplate} from 'src/templates/actions/creators'
+import {setCommunityTemplateToInstall} from 'src/templates/actions/creators'
 import {getOrg} from 'src/organizations/selectors'
 
 // Utils
@@ -28,13 +28,8 @@ import {pageTitleSuffixer} from 'src/shared/utils/pageTitles'
 import {
   getGithubUrlFromTemplateName,
   getTemplateNameFromGithubUrl,
+  reviewTemplate,
 } from 'src/templates/utils'
-
-import {
-  Error as PkgError,
-  TemplateSummary,
-  postTemplatesApply,
-} from 'src/client'
 
 // Types
 import {AppState, Organization} from 'src/types'
@@ -46,15 +41,13 @@ interface StateProps {
   org: Organization
 }
 
-interface OwnProps extends WithRouterProps {
-  params: {templateName: string}
-}
-
 interface DispatchProps {
-  setActiveCommunityTemplate: typeof setActiveCommunityTemplate
+  setCommunityTemplateToInstall: typeof setCommunityTemplateToInstall
 }
 
-type Props = DispatchProps & OwnProps & StateProps
+type Props = DispatchProps &
+  StateProps &
+  RouteComponentProps<{templateName: string}>
 
 // works specifically for csgo, the greatest community template ever conceived
 // https://github.com/influxdata/community-templates/tree/master/csgo
@@ -71,13 +64,12 @@ class UnconnectedTemplatesIndex extends Component<Props> {
   }
 
   public componentDidMount() {
-    if (this.props.params.templateName) {
-      const currentTemplate = getGithubUrlFromTemplateName(
-        this.props.params.templateName
-      )
+    const {templateName} = this.props.match.params
+    if (templateName) {
+      const currentTemplate = getGithubUrlFromTemplateName(templateName)
 
       this.setState({currentTemplate}, () => {
-        this.applyTemplates(
+        this.reviewTemplateResources(
           this.props.org.id,
           getTemplateNameFromGithubUrl(currentTemplate)
         )
@@ -148,25 +140,14 @@ class UnconnectedTemplatesIndex extends Component<Props> {
     )
   }
 
-  private applyTemplates = async (orgID, templateName) => {
+  private reviewTemplateResources = async (orgID, templateName) => {
     const yamlLocation =
       getRawYamlFromGithub(this.state.currentTemplate) + `/${templateName}.yml`
 
-    const params = {
-      data: {
-        dryRun: true,
-        orgID,
-        remotes: [{url: yamlLocation}],
-      },
-    }
     try {
-      const resp = await postTemplatesApply(params)
-      if (resp.status >= 300) {
-        throw new Error((resp.data as PkgError).message)
-      }
+      const summary = await reviewTemplate(orgID, yamlLocation)
 
-      const summary = (resp.data as TemplateSummary).summary
-      this.props.setActiveCommunityTemplate(summary)
+      this.props.setCommunityTemplateToInstall(summary)
       return summary
     } catch (err) {
       console.error(err)
@@ -181,13 +162,13 @@ class UnconnectedTemplatesIndex extends Component<Props> {
 
     const name = getTemplateNameFromGithubUrl(this.state.currentTemplate)
     this.showInstallerOverlay(name)
-    this.applyTemplates(this.props.org.id, name)
+    this.reviewTemplateResources(this.props.org.id, name)
   }
 
   private showInstallerOverlay = templateName => {
-    const {router, org} = this.props
+    const {history, org} = this.props
 
-    router.push(`/orgs/${org.id}/settings/templates/import/${templateName}`)
+    history.push(`/orgs/${org.id}/settings/templates/import/${templateName}`)
   }
 
   private handleTemplateChange = event => {
@@ -202,10 +183,10 @@ const mstp = (state: AppState): StateProps => {
 }
 
 const mdtp = {
-  setActiveCommunityTemplate,
+  setCommunityTemplateToInstall,
 }
 
-export const CommunityTemplatesIndex = connect<StateProps, {}, {}>(
+export const CommunityTemplatesIndex = connect<StateProps, DispatchProps, {}>(
   mstp,
   mdtp
-)(withRouter<{}>(UnconnectedTemplatesIndex))
+)(withRouter(UnconnectedTemplatesIndex))
