@@ -707,6 +707,14 @@ func (t *floatGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *floatGroupTable) advance() bool {
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
+		return false
+	}
 	var a *cursors.FloatArray
 	var l int
 	for {
@@ -734,22 +742,28 @@ func (t *floatGroupTable) advance() bool {
 		return true
 	}
 
-	// group with aggregate
+	// handle the group with aggregate case
 	var value float64
-	var timestamp int64
-	if t.gc.Aggregate().Type == datatypes.AggregateTypeFirst {
-		timestamp = math.MaxInt64
-	} else if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
 		timestamp = math.MinInt64
 	}
 	for {
+		// note that for the group aggregate case, l here should always be 1
 		for i := 0; i < l; i++ {
 			switch t.gc.Aggregate().Type {
 			case datatypes.AggregateTypeCount:
 				panic("unsupported for aggregate count: Float")
 			case datatypes.AggregateTypeSum:
 				value += a.Values[i]
-				timestamp = a.Timestamps[i]
 			case datatypes.AggregateTypeFirst:
 				if a.Timestamps[i] < timestamp {
 					timestamp = a.Timestamps[i]
@@ -1506,6 +1520,14 @@ func (t *integerGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *integerGroupTable) advance() bool {
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
+		return false
+	}
 	var a *cursors.IntegerArray
 	var l int
 	for {
@@ -1533,22 +1555,28 @@ func (t *integerGroupTable) advance() bool {
 		return true
 	}
 
-	// group with aggregate
+	// handle the group with aggregate case
 	var value int64
-	var timestamp int64
-	if t.gc.Aggregate().Type == datatypes.AggregateTypeFirst {
-		timestamp = math.MaxInt64
-	} else if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
 		timestamp = math.MinInt64
 	}
 	for {
+		// note that for the group aggregate case, l here should always be 1
 		for i := 0; i < l; i++ {
 			switch t.gc.Aggregate().Type {
 			case datatypes.AggregateTypeCount:
 				fallthrough
 			case datatypes.AggregateTypeSum:
 				value += a.Values[i]
-				timestamp = a.Timestamps[i]
 			case datatypes.AggregateTypeFirst:
 				if a.Timestamps[i] < timestamp {
 					timestamp = a.Timestamps[i]
@@ -2303,6 +2331,14 @@ func (t *unsignedGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *unsignedGroupTable) advance() bool {
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
+		return false
+	}
 	var a *cursors.UnsignedArray
 	var l int
 	for {
@@ -2330,22 +2366,28 @@ func (t *unsignedGroupTable) advance() bool {
 		return true
 	}
 
-	// group with aggregate
+	// handle the group with aggregate case
 	var value uint64
-	var timestamp int64
-	if t.gc.Aggregate().Type == datatypes.AggregateTypeFirst {
-		timestamp = math.MaxInt64
-	} else if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
 		timestamp = math.MinInt64
 	}
 	for {
+		// note that for the group aggregate case, l here should always be 1
 		for i := 0; i < l; i++ {
 			switch t.gc.Aggregate().Type {
 			case datatypes.AggregateTypeCount:
 				panic("unsupported for aggregate count: Unsigned")
 			case datatypes.AggregateTypeSum:
 				value += a.Values[i]
-				timestamp = a.Timestamps[i]
 			case datatypes.AggregateTypeFirst:
 				if a.Timestamps[i] < timestamp {
 					timestamp = a.Timestamps[i]
@@ -3100,6 +3142,14 @@ func (t *stringGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *stringGroupTable) advance() bool {
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
+		return false
+	}
 	var a *cursors.StringArray
 	var l int
 	for {
@@ -3127,15 +3177,22 @@ func (t *stringGroupTable) advance() bool {
 		return true
 	}
 
-	// group with aggregate
+	// handle the group with aggregate case
 	var value string
-	var timestamp int64
-	if t.gc.Aggregate().Type == datatypes.AggregateTypeFirst {
-		timestamp = math.MaxInt64
-	} else if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
 		timestamp = math.MinInt64
 	}
 	for {
+		// note that for the group aggregate case, l here should always be 1
 		for i := 0; i < l; i++ {
 			switch t.gc.Aggregate().Type {
 			case datatypes.AggregateTypeCount:
@@ -3896,6 +3953,14 @@ func (t *booleanGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *booleanGroupTable) advance() bool {
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
+		return false
+	}
 	var a *cursors.BooleanArray
 	var l int
 	for {
@@ -3923,15 +3988,22 @@ func (t *booleanGroupTable) advance() bool {
 		return true
 	}
 
-	// group with aggregate
+	// handle the group with aggregate case
 	var value bool
-	var timestamp int64
-	if t.gc.Aggregate().Type == datatypes.AggregateTypeFirst {
-		timestamp = math.MaxInt64
-	} else if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
 		timestamp = math.MinInt64
 	}
 	for {
+		// note that for the group aggregate case, l here should always be 1
 		for i := 0; i < l; i++ {
 			switch t.gc.Aggregate().Type {
 			case datatypes.AggregateTypeCount:
