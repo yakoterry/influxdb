@@ -34,7 +34,7 @@ describe('Dashboard', () => {
 
     cy.fixture('routes').then(({orgs}) => {
       cy.get('@org').then(({id: orgID}: Organization) => {
-        cy.visit(`${orgs}/${orgID}/dashboards-list`)
+        cy.visit(`${orgs}/${orgID}/dashboards`)
       })
     })
 
@@ -679,7 +679,7 @@ from(bucket: v.static)
     cy.get('@org').then(({id: orgID}: Organization) => {
       cy.createDashWithViewAndVar(orgID).then(() => {
         cy.fixture('routes').then(({orgs}) => {
-          cy.visit(`${orgs}/${orgID}/dashboards-list`)
+          cy.visit(`${orgs}/${orgID}/dashboards`)
           cy.getByTestID('dashboard-card--name').click()
           cy.get('.cell--view').should('have.length', 1)
         })
@@ -721,7 +721,6 @@ from(bucket: v.static)
       })
   })
 
-
   //based on issue #18339
   it('should save a time format change and show in the dashboard cell card', () => {
     const numLines = 360
@@ -733,8 +732,8 @@ from(bucket: v.static)
         })
       })
     })
-    const timeFormatOriginal = "YYYY-MM-DD HH:mm:ss ZZ"
-    const timeFormatNew = "hh:mm a"
+    const timeFormatOriginal = 'YYYY-MM-DD HH:mm:ss ZZ'
+    const timeFormatNew = 'hh:mm a'
 
     //creating new dashboard cell
     cy.getByTestID('add-cell--button').click()
@@ -754,8 +753,12 @@ from(bucket: v.static)
     cy.getByTestID(`cell-context--toggle`).click()
     cy.getByTestID(`cell-context--configure`).click()
     cy.getByTestID('dropdown--button').should('contain', timeFormatOriginal)
-    cy.getByTestID('dropdown--button').contains(timeFormatOriginal).click()
-    cy.getByTestID('dropdown-item').contains(timeFormatNew).click()
+    cy.getByTestID('dropdown--button')
+      .contains(timeFormatOriginal)
+      .click()
+    cy.getByTestID('dropdown-item')
+      .contains(timeFormatNew)
+      .click()
     cy.getByTestID('dropdown--button').should('contain', timeFormatNew)
     cy.getByTestID(`save-cell--button`).click()
 
@@ -763,7 +766,5 @@ from(bucket: v.static)
     cy.getByTestID(`cell-context--toggle`).click()
     cy.getByTestID(`cell-context--configure`).click()
     cy.getByTestID('dropdown--button').should('contain', timeFormatNew)
-
-
   })
 })
