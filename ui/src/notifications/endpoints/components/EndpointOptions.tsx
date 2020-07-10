@@ -5,6 +5,7 @@ import React, {FC, ChangeEvent} from 'react'
 import EndpointOptionsSlack from './EndpointOptionsSlack'
 import EndpointOptionsPagerDuty from './EndpointOptionsPagerDuty'
 import EndpointOptionsHTTP from './EndpointOptionsHTTP'
+import EndpointOptionsTeams from './EndpointOptionsTeams'
 
 // Types
 import {
@@ -12,6 +13,7 @@ import {
   SlackNotificationEndpoint,
   PagerDutyNotificationEndpoint,
   HTTPNotificationEndpoint,
+  TeamsNotificationEndpoint,
 } from 'src/types'
 
 interface Props {
@@ -61,6 +63,17 @@ const EndpointOptions: FC<Props> = ({
           method={method}
           authMethod={authMethod}
           contentTemplate={contentTemplate}
+        />
+      )
+    }
+
+    case 'teams': {
+      const {url, secretURLSuffix} = endpoint as TeamsNotificationEndpoint
+      return (
+        <EndpointOptionsTeams
+          url={url}
+          secretURLSuffix={secretURLSuffix}
+          onChange={onChange}
         />
       )
     }

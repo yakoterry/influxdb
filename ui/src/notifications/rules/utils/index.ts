@@ -14,6 +14,7 @@ import {
   RuleStatusLevel,
   PostNotificationRule,
   GenRule,
+  TeamsNotificationRuleBase,
 } from 'src/types'
 import {RemoteDataState} from '@influxdata/clockface'
 
@@ -22,6 +23,7 @@ type RuleVariantFields =
   | SMTPNotificationRuleBase
   | PagerDutyNotificationRuleBase
   | HTTPNotificationRuleBase
+  | TeamsNotificationRuleBase
 
 const defaultMessage =
   'Notification Rule: ${ r._notification_rule_name } triggered by check: ${ r._check_name }: ${ r._message }'
@@ -43,6 +45,14 @@ export const getRuleVariantDefaults = (
 
     case 'http': {
       return {type: 'http', url: ''}
+    }
+
+    case 'teams': {
+      return {
+        messageTemplate: defaultMessage,
+        title: '${ r._notification_rule_name }',
+        type: 'teams',
+      }
     }
 
     default: {

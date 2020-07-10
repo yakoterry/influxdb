@@ -5,6 +5,7 @@ import React, {FC} from 'react'
 import SlackMessage from './SlackMessage'
 import SMTPMessage from './SMTPMessage'
 import PagerDutyMessage from './PagerDutyMessage'
+import TeamsMessage from './TeamsMessage'
 
 // Utils
 import {useRuleDispatch} from './RuleOverlayProvider'
@@ -61,6 +62,18 @@ const RuleMessageContents: FC<Props> = ({rule}) => {
         />
       )
     }
+
+    case 'teams': {
+      const {title, messageTemplate} = rule
+      return (
+        <TeamsMessage
+          messageTemplate={messageTemplate}
+          title={title}
+          onChange={onChange}
+        />
+      )
+    }
+
     case 'http': {
       return <></>
     }

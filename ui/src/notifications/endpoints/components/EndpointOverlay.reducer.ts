@@ -34,6 +34,7 @@ export const reducer = (
           'headers',
           'clientURL',
           'routingKey',
+          'secretURLSuffix',
         ])
 
         switch (endpoint.type) {
@@ -57,6 +58,13 @@ export const reducer = (
               ...baseProps,
               type: 'slack',
               url: DEFAULT_ENDPOINT_URLS.slack,
+              token: '',
+            }
+          case 'teams':
+            return {
+              ...baseProps,
+              type: 'teams',
+              url: DEFAULT_ENDPOINT_URLS.teams,
               token: '',
             }
         }
