@@ -17,9 +17,13 @@ import {
   RunQuerySuccessResult,
 } from 'src/shared/apis/query'
 import {runStatusesQuery} from 'src/alerting/utils/statusEvents'
+import {getRunQueryResults} from 'src/shared/apis/query'
 
 // Utils
-import {getTimeRange} from 'src/dashboards/selectors'
+import {
+  getTimeRange,
+  isDashboardActive as isDashboardActiveSelector,
+} from 'src/dashboards/selectors'
 import {getVariables, asAssignment} from 'src/variables/selectors'
 import {getRangeVariable} from 'src/variables/utils/getTimeRangeVars'
 import {isInQuery} from 'src/variables/utils/hydrateVars'
@@ -32,7 +36,6 @@ import {
   isDemoDataAvailabilityError,
   demoDataError,
 } from 'src/cloud/utils/demoDataErrors'
-import {hashCode} from 'src/queryCache/actions'
 
 // Constants
 import {
@@ -44,8 +47,8 @@ import {TIME_RANGE_START, TIME_RANGE_STOP} from 'src/variables/constants'
 
 // Actions & Selectors
 import {notify as notifyAction} from 'src/shared/actions/notifications'
-import {setQueryResultsByQueryID} from 'src/queryCache/actions'
 import {hasUpdatedTimeRangeInVEO} from 'src/shared/selectors/app'
+import {setQueryResultsByQueryID} from 'src/queryCache/actions'
 
 // Types
 import {
@@ -174,10 +177,12 @@ class TimeSeries extends Component<Props, State> {
 
   private reload = async () => {
     const {
+      appState,
       buckets,
       check,
-      notify,
       onSetQueryResultsByQueryID,
+      isDashboardActive,
+      notify,
       variables,
     } = this.props
     const queries = this.props.queries.filter(({text}) => !!text.trim())
@@ -219,6 +224,12 @@ class TimeSeries extends Component<Props, State> {
         const extern = buildVarsOption([...vars, ...windowVars])
 
         reportSimpleQueryPerformanceEvent('runQuery', {context: 'TimeSeries'})
+        if (isDashboardActive) {
+          const {queryID, results} = getRunQueryResults(orgID, text, appState) -> CancelBo
+          onSetQueryResultsByQueryID(queryID, results)
+          return results
+        }
+
         return runQuery(orgID, text, extern)
       })
 
@@ -271,11 +282,6 @@ class TimeSeries extends Component<Props, State> {
       }
 
       this.pendingReload = false
-      const queryText = queries.map(({text}) => text).join('')
-      const queryID = hashCode(queryText)
-      if (queryID && files.length) {
-        onSetQueryResultsByQueryID(queryID, files)
-      }
 
       this.setState({
         giraffeResult,
@@ -355,7 +361,9 @@ const mstp = (state: AppState, props: OwnProps) => {
   ]
 
   return {
+    appState: state,
     hasUpdatedTimeRangeInVEO: hasUpdatedTimeRangeInVEO(state),
+    isDashboardActive: isDashboardActiveSelector(state),
     queryLink: state.links.query.self,
     buckets: getAll<Bucket>(state, ResourceType.Buckets),
     variables,

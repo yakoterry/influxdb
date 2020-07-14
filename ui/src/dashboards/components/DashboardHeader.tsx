@@ -24,6 +24,7 @@ import {
   setDashboardTimeRange as setDashboardTimeRangeAction,
   updateQueryParams as updateQueryParamsAction,
 } from 'src/dashboards/actions/ranges'
+import {resetCachedQueryResults} from 'src/queryCache/actions'
 
 // Utils
 import {fireDashboardViewedEvent} from 'src/shared/utils/analytics'
@@ -65,6 +66,7 @@ const DashboardHeader: FC<Props> = ({
   onSetAutoRefreshStatus,
   setAutoRefreshInterval,
   autoRefresh,
+  resetCachedQueryResults,
   timeRange,
   updateDashboard,
   updateQueryParams,
@@ -121,6 +123,12 @@ const DashboardHeader: FC<Props> = ({
     }
   }
 
+  const resetCacheAndRefresh = (): void => {
+    // We want to invalidate the existing cache when a user manually refreshes the dashboard
+    resetCachedQueryResults()
+    onManualRefresh()
+  }
+
   return (
     <>
       <Page.Header fullWidth={true}>
@@ -165,7 +173,7 @@ const DashboardHeader: FC<Props> = ({
           <TimeZoneDropdown />
           <AutoRefreshDropdown
             onChoose={handleChooseAutoRefresh}
-            onManualRefresh={onManualRefresh}
+            onManualRefresh={resetCacheAndRefresh}
             selected={autoRefresh}
           />
           <TimeRangeDropdown
@@ -202,6 +210,7 @@ const mdtp = {
   updateDashboard: updateDashboardAction,
   onSetAutoRefreshStatus: setAutoRefreshStatusAction,
   updateQueryParams: updateQueryParamsAction,
+  resetCachedQueryResults: resetCachedQueryResults,
   setDashboardTimeRange: setDashboardTimeRangeAction,
   setAutoRefreshInterval: setAutoRefreshIntervalAction,
 }
