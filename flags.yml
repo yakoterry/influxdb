@@ -73,18 +73,6 @@
   default: false
   contact: Query Team
 
-- name: Push Down Window Aggregate First
-  description: Enable First variant of PushDownWindowAggregateRule and PushDownBareAggregateRule
-  key: pushDownWindowAggregateFirst
-  default: false
-  contact: Query Team
-
-- name: Push Down Window Aggregate Last
-  description: Enable Last variant of PushDownWindowAggregateRule and PushDownBareAggregateRule
-  key: pushDownWindowAggregateLast
-  default: false
-  contact: Query Team
-
 - name: Group Window Aggregate Transpose
   description: Enables the GroupWindowAggregateTransposeRule for all enabled window aggregates
   key: groupWindowAggregateTranspose
@@ -139,4 +127,11 @@
   key: simpleTaskOptionsExtraction
   default: false
   contact: Brett Buddin
+  lifetime: temporary
+
+- name: Use User Permission
+  description: When enabled we will use the new user service permission function
+  key: useUserPermission
+  default: false
+  contact: Lyon Hill
   lifetime: temporary

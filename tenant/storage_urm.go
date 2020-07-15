@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/influxdata/influxdb/v2"
 	"github.com/influxdata/influxdb/v2/kv"
@@ -70,20 +71,34 @@ func (s *Store) ListURMs(ctx context.Context, tx kv.Tx, filter influxdb.UserReso
 	}
 
 	if filter.UserID.Valid() {
-		// urm by user index lookup
-		userID, _ := filter.UserID.Encode()
+		var (
+			errPageLimit = errors.New("page limit reached")
+			// urm by user index lookup
+			userID, _ = filter.UserID.Encode()
+			seen      int
+		)
+
 		if err := s.urmByUserIndex.Walk(ctx, tx, userID, func(k, v []byte) error {
 			m := &influxdb.UserResourceMapping{}
 			if err := json.Unmarshal(v, m); err != nil {
 				return CorruptURMError(err)
 			}
 
-			if filterFn(m) {
+			// respect offset parameter
+			reachedOffset := (len(opt) == 0 || seen >= opt[0].Offset)
+			if filterFn(m) && reachedOffset {
 				ms = append(ms, m)
 			}
 
+			// respect pagination in URMs
+			if len(opt) > 0 && opt[0].Limit > 0 && len(ms) >= opt[0].Limit {
+				return errPageLimit
+			}
+
+			seen++
+
 			return nil
-		}); err != nil {
+		}); err != nil && err != errPageLimit {
 			return nil, err
 		}
 
@@ -119,7 +134,7 @@ func (s *Store) ListURMs(ctx context.Context, tx kv.Tx, filter influxdb.UserReso
 			ms = append(ms, m)
 		}
 
-		if len(opt) > 0 && len(ms) >= opt[0].Limit {
+		if len(opt) > 0 && opt[0].Limit > 0 && len(ms) >= opt[0].Limit {
 			break
 		}
 	}

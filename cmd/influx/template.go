@@ -19,6 +19,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/influxdata/influxdb/v2"
+	"github.com/influxdata/influxdb/v2/cmd/influx/internal"
 	ihttp "github.com/influxdata/influxdb/v2/http"
 	ierror "github.com/influxdata/influxdb/v2/kit/errors"
 	"github.com/influxdata/influxdb/v2/pkger"
@@ -102,26 +103,8 @@ func newCmdPkgerBuilder(svcFn templateSVCsFn, f *globalFlags, opts genericCLIOpt
 }
 
 func (b *cmdTemplateBuilder) cmdApply() *cobra.Command {
-	cmd := b.cmdTemplateApply()
-
-	deprecatedCmds := []*cobra.Command{
-		b.cmdExport(),
-		b.cmdTemplateSummary(),
-		b.cmdStackDeprecated(),
-		b.cmdTemplateValidate(),
-	}
-	for i := range deprecatedCmds {
-		deprecatedCmds[i].Hidden = true
-	}
-
-	cmd.AddCommand(deprecatedCmds...)
-
-	return cmd
-}
-
-func (b *cmdTemplateBuilder) cmdTemplateApply() *cobra.Command {
 	cmd := b.newCmd("apply", b.applyRunEFn)
-	cmd.Aliases = []string{"pkg"}
+	enforceFlagValidation(cmd)
 	cmd.Short = "Apply a template to manage resources"
 	cmd.Long = `
 	The apply command applies InfluxDB template(s). Use the command to create new
@@ -473,6 +456,7 @@ func (b *cmdTemplateBuilder) cmdExportAll() *cobra.Command {
 	and
 	https://v2.docs.influxdata.com/v2.0/reference/cli/influx/export/all
 `
+	enforceFlagValidation(cmd)
 
 	cmd.Flags().StringVarP(&b.file, "file", "f", "", "output file for created template; defaults to std out if no file provided; the extension of provided file (.yml/.json) will dictate encoding")
 	cmd.Flags().StringArrayVar(&b.filters, "filter", nil, "Filter exported resources by labelName or resourceKind (format: --filter=labelName=example)")
@@ -569,19 +553,6 @@ func (b *cmdTemplateBuilder) exportStackRunEFn(cmd *cobra.Command, args []string
 }
 
 func (b *cmdTemplateBuilder) cmdTemplate() *cobra.Command {
-	cmd := b.newTemplateCmd("template")
-	cmd.Short = "Summarize the provided template"
-	cmd.AddCommand(b.cmdTemplateValidate())
-	return cmd
-}
-
-func (b *cmdTemplateBuilder) cmdTemplateSummary() *cobra.Command {
-	cmd := b.newTemplateCmd("summary")
-	cmd.Short = "Summarize the provided template"
-	return cmd
-}
-
-func (b *cmdTemplateBuilder) newTemplateCmd(usage string) *cobra.Command {
 	runE := func(cmd *cobra.Command, args []string) error {
 		template, _, err := b.readTemplate()
 		if err != nil {
@@ -591,11 +562,13 @@ func (b *cmdTemplateBuilder) newTemplateCmd(usage string) *cobra.Command {
 		return b.printTemplateSummary(0, template.Summary())
 	}
 
-	cmd := b.genericCLIOpts.newCmd(usage, runE, false)
+	cmd := b.genericCLIOpts.newCmd("template", runE, false)
 
 	b.registerTemplateFileFlags(cmd)
 	b.registerTemplatePrintOpts(cmd)
+	cmd.Short = "Summarize the provided template"
 
+	cmd.AddCommand(b.cmdTemplateValidate())
 	return cmd
 }
 
@@ -617,7 +590,13 @@ func (b *cmdTemplateBuilder) cmdTemplateValidate() *cobra.Command {
 }
 
 func (b *cmdTemplateBuilder) cmdStacks() *cobra.Command {
-	cmd := b.newCmdStackList("stacks")
+	cmd := b.newCmd("stacks [flags]", b.stackListRunEFn)
+	cmd.Flags().StringArrayVar(&b.stackIDs, "stack-id", nil, "Stack ID to filter by")
+	cmd.Flags().StringArrayVar(&b.names, "stack-name", nil, "Stack name to filter by")
+	registerPrintOptions(cmd, &b.hideHeaders, &b.json)
+
+	b.org.register(cmd, false)
+
 	cmd.Short = "List stack(s) and associated templates. Subcommands manage stacks."
 	cmd.Long = `
 	List stack(s) and associated templates. Subcommands manage stacks.
@@ -647,18 +626,6 @@ func (b *cmdTemplateBuilder) cmdStacks() *cobra.Command {
 		b.cmdStackInit(),
 		b.cmdStackRemove(),
 		b.cmdStackUpdate(),
-	)
-	return cmd
-}
-
-// TODO(jsteenb2): nuke the deprecated command here after OSS beta13 release.
-func (b *cmdTemplateBuilder) cmdStackDeprecated() *cobra.Command {
-	cmd := b.genericCLIOpts.newCmd("stack", nil, false)
-	cmd.Short = "Stack management commands"
-	cmd.AddCommand(
-		b.cmdStackInit(),
-		b.cmdStackList(),
-		b.cmdStackRemove(),
 	)
 	return cmd
 }
@@ -708,7 +675,7 @@ func (b *cmdTemplateBuilder) stackInitRunEFn(cmd *cobra.Command, args []string) 
 	}
 
 	const fakeUserID = 0 // is 0 because user is pulled from token...
-	stack, err := templateSVC.InitStack(context.Background(), fakeUserID, pkger.Stack{
+	stack, err := templateSVC.InitStack(context.Background(), fakeUserID, pkger.StackCreate{
 		OrgID:        orgID,
 		Name:         b.name,
 		Description:  b.description,
@@ -719,25 +686,6 @@ func (b *cmdTemplateBuilder) stackInitRunEFn(cmd *cobra.Command, args []string) 
 	}
 
 	return b.writeStack(stack)
-}
-
-func (b *cmdTemplateBuilder) cmdStackList() *cobra.Command {
-	cmd := b.newCmdStackList("list")
-	cmd.Short = "List stack(s) and associated resources"
-	cmd.Aliases = []string{"ls"}
-	return cmd
-}
-
-func (b *cmdTemplateBuilder) newCmdStackList(cmdName string) *cobra.Command {
-	usage := fmt.Sprintf("%s [flags]", cmdName)
-	cmd := b.newCmd(usage, b.stackListRunEFn)
-	cmd.Flags().StringArrayVar(&b.stackIDs, "stack-id", nil, "Stack ID to filter by")
-	cmd.Flags().StringArrayVar(&b.names, "stack-name", nil, "Stack name to filter by")
-	registerPrintOptions(cmd, &b.hideHeaders, &b.json)
-
-	b.org.register(cmd, false)
-
-	return cmd
 }
 
 func (b *cmdTemplateBuilder) stackListRunEFn(cmd *cobra.Command, args []string) error {
@@ -776,20 +724,7 @@ func (b *cmdTemplateBuilder) stackListRunEFn(cmd *cobra.Command, args []string) 
 	defer tabW.Flush()
 
 	tabW.HideHeaders(b.hideHeaders)
-	tabW.WriteHeaders("ID", "OrgID", "Name", "Description", "Num Resources", "Sources", "URLs", "Created At")
-
-	for _, stack := range stacks {
-		tabW.Write(map[string]interface{}{
-			"ID":            stack.ID,
-			"OrgID":         stack.OrgID,
-			"Name":          stack.Name,
-			"Description":   stack.Description,
-			"Num Resources": len(stack.Resources),
-			"Sources":       stack.Sources,
-			"URLs":          stack.TemplateURLs,
-			"Created At":    stack.CreatedAt,
-		})
-	}
+	writeStackRows(tabW, stacks...)
 
 	return nil
 }
@@ -848,19 +783,7 @@ func (b *cmdTemplateBuilder) stackRemoveRunEFn(cmd *cobra.Command, args []string
 		}()
 
 		tabW.HideHeaders(b.hideHeaders)
-
-		tabW.WriteHeaders("ID", "OrgID", "Name", "Description", "Num Resources", "Sources", "URLs", "Created At")
-		tabW.Write(map[string]interface{}{
-			"ID":            stack.ID,
-			"OrgID":         stack.OrgID,
-			"Name":          stack.Name,
-			"Description":   stack.Description,
-			"Num Resources": len(stack.Resources),
-			"Sources":       stack.Sources,
-			"URLs":          stack.TemplateURLs,
-			"Created At":    stack.CreatedAt,
-		})
-
+		writeStackRows(tabW, stack)
 		return nil
 	}
 
@@ -1010,18 +933,7 @@ func (b *cmdTemplateBuilder) writeStack(stack pkger.Stack) error {
 	defer tabW.Flush()
 
 	tabW.HideHeaders(b.hideHeaders)
-
-	tabW.WriteHeaders("ID", "OrgID", "Name", "Description", "Num Resources", "Sources", "URLs", "Created At")
-	tabW.Write(map[string]interface{}{
-		"ID":            stack.ID,
-		"OrgID":         stack.OrgID,
-		"Name":          stack.Name,
-		"Description":   stack.Description,
-		"Num Resources": len(stack.Resources),
-		"Sources":       stack.Sources,
-		"URLs":          stack.TemplateURLs,
-		"Created At":    stack.CreatedAt,
-	})
+	writeStackRows(tabW, stack)
 
 	return nil
 }
@@ -1803,6 +1715,25 @@ func (b *cmdTemplateBuilder) printTemplateSummary(stackID influxdb.ID, sum pkger
 func (b *cmdTemplateBuilder) tablePrinterGen() func(table string, headers []string, count int, rowFn func(i int) []string) {
 	return func(table string, headers []string, count int, rowFn func(i int) []string) {
 		tablePrinter(b.w, table, headers, count, !b.disableColor, !b.disableTableBorders, rowFn)
+	}
+}
+
+func writeStackRows(tabW *internal.TabWriter, stacks ...pkger.Stack) {
+	tabW.WriteHeaders("ID", "OrgID", "Active", "Name", "Description", "Num Resources", "Sources", "URLs", "Created At", "Updated At")
+	for _, stack := range stacks {
+		latest := stack.LatestEvent()
+		tabW.Write(map[string]interface{}{
+			"ID":            stack.ID,
+			"OrgID":         stack.OrgID,
+			"Active":        latest.EventType != pkger.StackEventUninstalled,
+			"Name":          latest.Name,
+			"Description":   latest.Description,
+			"Num Resources": len(latest.Resources),
+			"Sources":       latest.Sources,
+			"URLs":          latest.TemplateURLs,
+			"Created At":    stack.CreatedAt,
+			"Updated At":    latest.UpdatedAt,
+		})
 	}
 }
 
