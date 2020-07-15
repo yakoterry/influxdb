@@ -15,6 +15,8 @@ import (
 	"github.com/influxdata/flux"
 	"github.com/influxdata/flux/execute"
 	"github.com/influxdata/flux/execute/executetest"
+	"github.com/influxdata/flux/execute/table"
+	"github.com/influxdata/flux/execute/table/static"
 	"github.com/influxdata/flux/memory"
 	"github.com/influxdata/flux/plan"
 	"github.com/influxdata/flux/values"
@@ -487,115 +489,183 @@ func TestStorageReader_ReadWindowAggregate_ByStopTime(t *testing.T) {
 	}
 }
 
+func Spec(org, bucket influxdb.ID, measurements ...gen.MeasurementSpec) *gen.Spec {
+	return &gen.Spec{
+		OrgID:        org,
+		BucketID:     bucket,
+		Measurements: measurements,
+	}
+}
+
+func MeasurementSpec(name string, field *gen.FieldValuesSpec, tags ...*gen.TagValuesSpec) gen.MeasurementSpec {
+	return gen.MeasurementSpec{
+		Name:            name,
+		TagsSpec:        TagsSpec(tags...),
+		FieldValuesSpec: field,
+	}
+}
+
+func FloatArrayValuesSequence(name string, delta time.Duration, values []float64) *gen.FieldValuesSpec {
+	return &gen.FieldValuesSpec{
+		Name: name,
+		TimeSequenceSpec: gen.TimeSequenceSpec{
+			Count: math.MaxInt32,
+			Delta: delta,
+		},
+		DataType: models.Float,
+		Values: func(spec gen.TimeSequenceSpec) gen.TimeValuesSequence {
+			return gen.NewTimeFloatValuesSequence(
+				spec.Count,
+				gen.NewTimestampSequenceFromSpec(spec),
+				gen.NewFloatArrayValuesSequence(values),
+			)
+		},
+	}
+}
+
+func TagsSpec(specs ...*gen.TagValuesSpec) *gen.TagsSpec {
+	return &gen.TagsSpec{Tags: specs}
+}
+
+func TagValuesSequence(key, format string, start, stop int) *gen.TagValuesSpec {
+	return &gen.TagValuesSpec{
+		TagKey: key,
+		Values: func() gen.CountableSequence {
+			return gen.NewCounterByteSequence(format, start, stop)
+		},
+	}
+}
+
+func TimeRange(start, end string) gen.TimeRange {
+	return gen.TimeRange{
+		Start: mustParseTime(start),
+		End:   mustParseTime(end),
+	}
+}
+
 func TestStorageReader_ReadWindowAggregate_ByStartTime(t *testing.T) {
 	reader := NewStorageReader(t, func(org, bucket influxdb.ID) (gen.SeriesGenerator, gen.TimeRange) {
-		tagsSpec := &gen.TagsSpec{
-			Tags: []*gen.TagValuesSpec{
-				{
-					TagKey: "t0",
-					Values: func() gen.CountableSequence {
-						return gen.NewCounterByteSequence("a-%s", 0, 3)
-					},
-				},
-			},
-		}
-		spec := gen.Spec{
-			OrgID:    org,
-			BucketID: bucket,
-			Measurements: []gen.MeasurementSpec{
-				{
-					Name:     "m0",
-					TagsSpec: tagsSpec,
-					FieldValuesSpec: &gen.FieldValuesSpec{
-						Name: "f0",
-						TimeSequenceSpec: gen.TimeSequenceSpec{
-							Count: math.MaxInt32,
-							Delta: 10 * time.Second,
-						},
-						DataType: models.Float,
-						Values: func(spec gen.TimeSequenceSpec) gen.TimeValuesSequence {
-							return gen.NewTimeFloatValuesSequence(
-								spec.Count,
-								gen.NewTimestampSequenceFromSpec(spec),
-								gen.NewFloatArrayValuesSequence([]float64{1.0, 2.0, 3.0, 4.0}),
-							)
-						},
-					},
-				},
-			},
-		}
-		tr := gen.TimeRange{
-			Start: mustParseTime("2019-11-25T00:00:00Z"),
-			End:   mustParseTime("2019-11-25T00:02:00Z"),
-		}
-		return gen.NewSeriesGeneratorFromSpec(&spec, tr), tr
+		spec := Spec(org, bucket,
+			MeasurementSpec("m0",
+				FloatArrayValuesSequence("f0", 10*time.Second, []float64{1.0, 2.0, 3.0, 4.0}),
+				TagValuesSequence("t0", "a-%s", 0, 3),
+			),
+		)
+		tr := TimeRange("2019-11-25T00:00:00Z", "2019-11-25T00:02:00Z")
+		return gen.NewSeriesGeneratorFromSpec(spec, tr), tr
 	})
 	defer reader.Close()
 
-	mem := &memory.Allocator{}
-	ti, err := reader.ReadWindowAggregate(context.Background(), query.ReadWindowAggregateSpec{
-		ReadFilterSpec: query.ReadFilterSpec{
-			OrganizationID: reader.Org,
-			BucketID:       reader.Bucket,
-			Bounds:         reader.Bounds,
+	want := []static.Table{
+		{
+			"_start":       static.TimeKey("2019-11-25T00:00:00Z"),
+			"_stop":        static.TimeKey("2019-11-25T00:02:00Z"),
+			"_time":        static.Times("2019-11-25T00:00:00Z", 30, 60, 90),
+			"_field":       static.StringKey("f0"),
+			"_measurement": static.StringKey("m0"),
+			"t0":           static.StringKey("a-0"),
 		},
-		TimeColumn:  execute.DefaultStartColLabel,
-		WindowEvery: int64(30 * time.Second),
-		Aggregates: []plan.ProcedureKind{
-			storageflux.CountKind,
+		{
+			"_start":       static.TimeKey("2019-11-25T00:00:00Z"),
+			"_stop":        static.TimeKey("2019-11-25T00:02:00Z"),
+			"_time":        static.Times("2019-11-25T00:00:00Z", 30, 60, 90),
+			"_field":       static.StringKey("f0"),
+			"_measurement": static.StringKey("m0"),
+			"t0":           static.StringKey("a-1"),
 		},
-	}, mem)
-	if err != nil {
-		t.Fatal(err)
+		{
+			"_start":       static.TimeKey("2019-11-25T00:00:00Z"),
+			"_stop":        static.TimeKey("2019-11-25T00:02:00Z"),
+			"_time":        static.Times("2019-11-25T00:00:00Z", 30, 60, 90),
+			"_field":       static.StringKey("f0"),
+			"_measurement": static.StringKey("m0"),
+			"t0":           static.StringKey("a-2"),
+		},
 	}
 
-	makeWindowTable := func(t0 string) *executetest.Table {
-		start, stop := reader.Bounds.Start, reader.Bounds.Stop
-		return &executetest.Table{
-			KeyCols: []string{"_start", "_stop", "_field", "_measurement", "t0"},
-			ColMeta: []flux.ColMeta{
-				{Label: "_start", Type: flux.TTime},
-				{Label: "_stop", Type: flux.TTime},
-				{Label: "_time", Type: flux.TTime},
-				{Label: "_value", Type: flux.TInt},
-				{Label: "_field", Type: flux.TString},
-				{Label: "_measurement", Type: flux.TString},
-				{Label: "t0", Type: flux.TString},
+	for _, tt := range []struct {
+		aggregate plan.ProcedureKind
+		want      flux.TableIterator
+	}{
+		{
+			aggregate: storageflux.CountKind,
+			want: table.Iterator{
+				want[0].Extend(static.Table{
+					"_value": static.Ints(3, 3, 3, 3),
+				}),
+				want[1].Extend(static.Table{
+					"_value": static.Ints(3, 3, 3, 3),
+				}),
+				want[2].Extend(static.Table{
+					"_value": static.Ints(3, 3, 3, 3),
+				}),
 			},
-			Data: [][]interface{}{
-				{start, stop, Time("2019-11-25T00:00:00Z"), int64(3), "f0", "m0", t0},
-				{start, stop, Time("2019-11-25T00:00:30Z"), int64(3), "f0", "m0", t0},
-				{start, stop, Time("2019-11-25T00:01:00Z"), int64(3), "f0", "m0", t0},
-				{start, stop, Time("2019-11-25T00:01:30Z"), int64(3), "f0", "m0", t0},
+		},
+		{
+			aggregate: storageflux.SumKind,
+			want: table.Iterator{
+				want[0].Extend(static.Table{
+					"_value": static.Floats(6, 7, 8, 9),
+				}),
+				want[1].Extend(static.Table{
+					"_value": static.Floats(6, 7, 8, 9),
+				}),
+				want[2].Extend(static.Table{
+					"_value": static.Floats(6, 7, 8, 9),
+				}),
 			},
-		}
-	}
+		},
+		{
+			aggregate: storageflux.FirstKind,
+			want: table.Iterator{
+				want[0].Extend(static.Table{
+					"_value": static.Floats(1, 4, 3, 2),
+				}),
+				want[1].Extend(static.Table{
+					"_value": static.Floats(1, 4, 3, 2),
+				}),
+				want[2].Extend(static.Table{
+					"_value": static.Floats(1, 4, 3, 2),
+				}),
+			},
+		},
+		{
+			aggregate: storageflux.LastKind,
+			want: table.Iterator{
+				want[0].Extend(static.Table{
+					"_value": static.Floats(3, 2, 1, 4),
+				}),
+				want[1].Extend(static.Table{
+					"_value": static.Floats(3, 2, 1, 4),
+				}),
+				want[2].Extend(static.Table{
+					"_value": static.Floats(3, 2, 1, 4),
+				}),
+			},
+		},
+	} {
+		t.Run(string(tt.aggregate), func(t *testing.T) {
+			mem := &memory.Allocator{}
+			got, err := reader.ReadWindowAggregate(context.Background(), query.ReadWindowAggregateSpec{
+				ReadFilterSpec: query.ReadFilterSpec{
+					OrganizationID: reader.Org,
+					BucketID:       reader.Bucket,
+					Bounds:         reader.Bounds,
+				},
+				TimeColumn:  execute.DefaultStartColLabel,
+				WindowEvery: int64(30 * time.Second),
+				Aggregates: []plan.ProcedureKind{
+					tt.aggregate,
+				},
+			}, mem)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	want := []*executetest.Table{
-		makeWindowTable("a-0"),
-		makeWindowTable("a-1"),
-		makeWindowTable("a-2"),
-	}
-	executetest.NormalizeTables(want)
-	sort.Sort(executetest.SortedTables(want))
-
-	var got []*executetest.Table
-	if err := ti.Do(func(table flux.Table) error {
-		t, err := executetest.ConvertTable(table)
-		if err != nil {
-			return err
-		}
-		got = append(got, t)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	executetest.NormalizeTables(got)
-	sort.Sort(executetest.SortedTables(got))
-
-	// compare these two
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("unexpected results -want/+got:\n%s", diff)
+			if diff := table.DiffIterator(tt.want, got); diff != "" {
+				t.Fatalf("unexpected output -want/+got:\n%s", diff)
+			}
+		})
 	}
 }
 

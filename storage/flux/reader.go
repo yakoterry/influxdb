@@ -619,6 +619,7 @@ func (wai *windowAggregateIterator) Do(f func(flux.Table) error) error {
 
 const (
 	CountKind = "count"
+	SumKind   = "sum"
 	FirstKind = "first"
 	LastKind  = "last"
 	MinKind   = "min"
