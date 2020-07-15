@@ -48,7 +48,6 @@ import {TIME_RANGE_START, TIME_RANGE_STOP} from 'src/variables/constants'
 // Actions & Selectors
 import {notify as notifyAction} from 'src/shared/actions/notifications'
 import {hasUpdatedTimeRangeInVEO} from 'src/shared/selectors/app'
-import {setQueryResultsByQueryID} from 'src/queryCache/actions'
 
 // Types
 import {
@@ -180,7 +179,6 @@ class TimeSeries extends Component<Props, State> {
       appState,
       buckets,
       check,
-      onSetQueryResultsByQueryID,
       isDashboardActive,
       notify,
       variables,
@@ -204,7 +202,11 @@ class TimeSeries extends Component<Props, State> {
       let errorMessage: string = ''
 
       // Cancel any existing queries
-      this.pendingResults.forEach(({cancel}) => cancel())
+      this.pendingResults.forEach(({cancel}) => {
+        if (cancel) {
+          cancel()
+        }
+      })
       const usedVars = variables.filter(v => v.arguments.type !== 'system')
       const waitList = usedVars.filter(v => v.status !== RemoteDataState.Done)
 
@@ -225,9 +227,7 @@ class TimeSeries extends Component<Props, State> {
 
         reportSimpleQueryPerformanceEvent('runQuery', {context: 'TimeSeries'})
         if (isDashboardActive) {
-          const {queryID, results} = getRunQueryResults(orgID, text, appState) -> CancelBo
-          onSetQueryResultsByQueryID(queryID, results)
-          return results
+          return getRunQueryResults(orgID, text, appState)
         }
 
         return runQuery(orgID, text, extern)
@@ -372,7 +372,6 @@ const mstp = (state: AppState, props: OwnProps) => {
 
 const mdtp = {
   notify: notifyAction,
-  onSetQueryResultsByQueryID: setQueryResultsByQueryID,
 }
 
 const connector = connect(mstp, mdtp)
