@@ -69,6 +69,7 @@ export const getUserVariableNames = (
   state: AppState,
   contextID: string
 ): string[] => {
+  console.log(state)
   const allIDs = get(state, ['resources', 'variables', 'allIDs'], [])
   const contextIDs = get(
     state,
