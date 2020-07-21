@@ -2,7 +2,7 @@
 PARALLEL=16
 
 # How many iterations of of parallel runs to make.
-ITERATIONS=16
+ITERATIONS=32
 
 logfn() {
 	printf "log-%02d-%02d.txt" $1 $2

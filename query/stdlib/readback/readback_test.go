@@ -8,36 +8,9 @@ package readback_test
 //
 // while true; do ./readback.test; done
 //
-// OR if you are less patient: run many in parallel. Leftover log files with
-// "FAIL" in them represent failures. You may see issues related to NAT, this
-// is a separate problem that the sleep below tries to address (see launcher).
+//    OR if you are less patient:
 //
-// # How many test case processes to run in parallel.
-// PARALLEL=16
-// 
-// # How many iterations of of parallel runs to make.
-// ITERATIONS=16
-// 
-// logfn() {
-// 	printf "log-%02d-%02d.txt" $1 $2
-// }
-// 
-// for run in `seq 1 $ITERATIONS`; do
-// 		for i in `seq 1 $PARALLEL`; do
-// 				LOG=`logfn $run $i`
-// 				./readback.test >$LOG &
-// 				sleep 0.5
-// 		done
-// 
-// 		for i in `seq 1 $PARALLEL`; do
-// 				wait
-// 		done
-// 
-// 		for i in `seq 1 $PARALLEL`; do
-// 			LOG=`logfn $run $i`
-// 			grep -q ^FAIL $LOG || rm $LOG 
-// 		done
-// done
+// bash ./query/stdlib/readback/load.sh
 
 import (
 	"fmt"
@@ -262,8 +235,6 @@ func testFlux(t testing.TB, l *launcher.TestLauncher, bs *http.BucketService, na
 		"import \"csv\"" +
 		inData +
 		"csv.from( csv: inData ) |> to( bucket: \"" + bucket + "\", org: \"" + org + "\" )\n"
-
-	// fmt.Println( write )
 
 	read :=
 		"from( bucket: \"" + bucket + "\" ) |> range( start: 0 ) |> yield( name: \"readback\" )\n"
