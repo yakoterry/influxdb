@@ -18,6 +18,7 @@ import (
 	"github.com/influxdata/influxdb/v2"
 	"github.com/influxdata/influxdb/v2/models"
 	storage "github.com/influxdata/influxdb/v2/storage/reads"
+	"github.com/influxdata/influxdb/v2/storage/reads/datatypes"
 	"github.com/influxdata/influxdb/v2/tsdb/cursors"
 )
 
@@ -710,24 +711,87 @@ func (t *floatGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *floatGroupTable) advance() bool {
-RETRY:
-	a := t.cur.Next()
-	l := a.Len()
-	if l == 0 {
-		if t.advanceCursor() {
-			goto RETRY
-		}
-
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
 		return false
 	}
+	var a *cursors.FloatArray
+	var l int
+	for {
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			break
+		}
+		if !t.advanceCursor() {
+			return false
+		}
+	}
 
-	// Retrieve the buffer for the data to avoid allocating
-	// additional slices. If the buffer is still being used
-	// because the references were retained, then we will
-	// allocate a new buffer.
-	cr := t.allocateBuffer(l)
-	cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
-	cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+	// handle the group without aggregate case
+	if t.gc.Aggregate() == nil {
+		// Retrieve the buffer for the data to avoid allocating
+		// additional slices. If the buffer is still being used
+		// because the references were retained, then we will
+		// allocate a new buffer.
+		cr := t.allocateBuffer(l)
+		cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
+		cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+		t.appendTags(cr)
+		t.appendBounds(cr)
+		return true
+	}
+
+	// handle the group with aggregate case
+	var value float64
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+		timestamp = math.MinInt64
+	}
+	for {
+		// note that for the group aggregate case, l here should always be 1
+		for i := 0; i < l; i++ {
+			switch t.gc.Aggregate().Type {
+			case datatypes.AggregateTypeCount:
+				panic("unsupported for aggregate count: Float")
+			case datatypes.AggregateTypeSum:
+				value += a.Values[i]
+			case datatypes.AggregateTypeFirst:
+				if a.Timestamps[i] < timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			case datatypes.AggregateTypeLast:
+				if a.Timestamps[i] > timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			}
+		}
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			continue
+		}
+		if !t.advanceCursor() {
+			break
+		}
+	}
+	cr := t.allocateBuffer(1)
+	cr.cols[timeColIdx] = arrow.NewInt([]int64{timestamp}, t.alloc)
+	cr.cols[valueColIdx] = t.toArrowBuffer([]float64{value})
 	t.appendTags(cr)
 	t.appendBounds(cr)
 	return true
@@ -1464,24 +1528,87 @@ func (t *integerGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *integerGroupTable) advance() bool {
-RETRY:
-	a := t.cur.Next()
-	l := a.Len()
-	if l == 0 {
-		if t.advanceCursor() {
-			goto RETRY
-		}
-
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
 		return false
 	}
+	var a *cursors.IntegerArray
+	var l int
+	for {
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			break
+		}
+		if !t.advanceCursor() {
+			return false
+		}
+	}
 
-	// Retrieve the buffer for the data to avoid allocating
-	// additional slices. If the buffer is still being used
-	// because the references were retained, then we will
-	// allocate a new buffer.
-	cr := t.allocateBuffer(l)
-	cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
-	cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+	// handle the group without aggregate case
+	if t.gc.Aggregate() == nil {
+		// Retrieve the buffer for the data to avoid allocating
+		// additional slices. If the buffer is still being used
+		// because the references were retained, then we will
+		// allocate a new buffer.
+		cr := t.allocateBuffer(l)
+		cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
+		cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+		t.appendTags(cr)
+		t.appendBounds(cr)
+		return true
+	}
+
+	// handle the group with aggregate case
+	var value int64
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+		timestamp = math.MinInt64
+	}
+	for {
+		// note that for the group aggregate case, l here should always be 1
+		for i := 0; i < l; i++ {
+			switch t.gc.Aggregate().Type {
+			case datatypes.AggregateTypeCount:
+				fallthrough
+			case datatypes.AggregateTypeSum:
+				value += a.Values[i]
+			case datatypes.AggregateTypeFirst:
+				if a.Timestamps[i] < timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			case datatypes.AggregateTypeLast:
+				if a.Timestamps[i] > timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			}
+		}
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			continue
+		}
+		if !t.advanceCursor() {
+			break
+		}
+	}
+	cr := t.allocateBuffer(1)
+	cr.cols[timeColIdx] = arrow.NewInt([]int64{timestamp}, t.alloc)
+	cr.cols[valueColIdx] = t.toArrowBuffer([]int64{value})
 	t.appendTags(cr)
 	t.appendBounds(cr)
 	return true
@@ -2216,24 +2343,87 @@ func (t *unsignedGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *unsignedGroupTable) advance() bool {
-RETRY:
-	a := t.cur.Next()
-	l := a.Len()
-	if l == 0 {
-		if t.advanceCursor() {
-			goto RETRY
-		}
-
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
 		return false
 	}
+	var a *cursors.UnsignedArray
+	var l int
+	for {
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			break
+		}
+		if !t.advanceCursor() {
+			return false
+		}
+	}
 
-	// Retrieve the buffer for the data to avoid allocating
-	// additional slices. If the buffer is still being used
-	// because the references were retained, then we will
-	// allocate a new buffer.
-	cr := t.allocateBuffer(l)
-	cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
-	cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+	// handle the group without aggregate case
+	if t.gc.Aggregate() == nil {
+		// Retrieve the buffer for the data to avoid allocating
+		// additional slices. If the buffer is still being used
+		// because the references were retained, then we will
+		// allocate a new buffer.
+		cr := t.allocateBuffer(l)
+		cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
+		cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+		t.appendTags(cr)
+		t.appendBounds(cr)
+		return true
+	}
+
+	// handle the group with aggregate case
+	var value uint64
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+		timestamp = math.MinInt64
+	}
+	for {
+		// note that for the group aggregate case, l here should always be 1
+		for i := 0; i < l; i++ {
+			switch t.gc.Aggregate().Type {
+			case datatypes.AggregateTypeCount:
+				panic("unsupported for aggregate count: Unsigned")
+			case datatypes.AggregateTypeSum:
+				value += a.Values[i]
+			case datatypes.AggregateTypeFirst:
+				if a.Timestamps[i] < timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			case datatypes.AggregateTypeLast:
+				if a.Timestamps[i] > timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			}
+		}
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			continue
+		}
+		if !t.advanceCursor() {
+			break
+		}
+	}
+	cr := t.allocateBuffer(1)
+	cr.cols[timeColIdx] = arrow.NewInt([]int64{timestamp}, t.alloc)
+	cr.cols[valueColIdx] = t.toArrowBuffer([]uint64{value})
 	t.appendTags(cr)
 	t.appendBounds(cr)
 	return true
@@ -2968,24 +3158,87 @@ func (t *stringGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *stringGroupTable) advance() bool {
-RETRY:
-	a := t.cur.Next()
-	l := a.Len()
-	if l == 0 {
-		if t.advanceCursor() {
-			goto RETRY
-		}
-
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
 		return false
 	}
+	var a *cursors.StringArray
+	var l int
+	for {
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			break
+		}
+		if !t.advanceCursor() {
+			return false
+		}
+	}
 
-	// Retrieve the buffer for the data to avoid allocating
-	// additional slices. If the buffer is still being used
-	// because the references were retained, then we will
-	// allocate a new buffer.
-	cr := t.allocateBuffer(l)
-	cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
-	cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+	// handle the group without aggregate case
+	if t.gc.Aggregate() == nil {
+		// Retrieve the buffer for the data to avoid allocating
+		// additional slices. If the buffer is still being used
+		// because the references were retained, then we will
+		// allocate a new buffer.
+		cr := t.allocateBuffer(l)
+		cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
+		cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+		t.appendTags(cr)
+		t.appendBounds(cr)
+		return true
+	}
+
+	// handle the group with aggregate case
+	var value string
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+		timestamp = math.MinInt64
+	}
+	for {
+		// note that for the group aggregate case, l here should always be 1
+		for i := 0; i < l; i++ {
+			switch t.gc.Aggregate().Type {
+			case datatypes.AggregateTypeCount:
+				panic("unsupported for aggregate count: String")
+			case datatypes.AggregateTypeSum:
+				panic("unsupported for aggregate sum: String")
+			case datatypes.AggregateTypeFirst:
+				if a.Timestamps[i] < timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			case datatypes.AggregateTypeLast:
+				if a.Timestamps[i] > timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			}
+		}
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			continue
+		}
+		if !t.advanceCursor() {
+			break
+		}
+	}
+	cr := t.allocateBuffer(1)
+	cr.cols[timeColIdx] = arrow.NewInt([]int64{timestamp}, t.alloc)
+	cr.cols[valueColIdx] = t.toArrowBuffer([]string{value})
 	t.appendTags(cr)
 	t.appendBounds(cr)
 	return true
@@ -3720,24 +3973,87 @@ func (t *booleanGroupTable) Do(f func(flux.ColReader) error) error {
 }
 
 func (t *booleanGroupTable) advance() bool {
-RETRY:
-	a := t.cur.Next()
-	l := a.Len()
-	if l == 0 {
-		if t.advanceCursor() {
-			goto RETRY
-		}
-
+	if t.cur == nil {
+		// For group aggregates, we will try to get all the series and all table buffers within those series
+		// all at once and merge them into one row when this advance() function is first called.
+		// At the end of this process, t.advanceCursor() already returns false and t.cur becomes nil.
+		// But we still need to return true to indicate that there is data to be returned.
+		// The second time when we call this advance(), t.cur is already nil, so we directly return false.
 		return false
 	}
+	var a *cursors.BooleanArray
+	var l int
+	for {
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			break
+		}
+		if !t.advanceCursor() {
+			return false
+		}
+	}
 
-	// Retrieve the buffer for the data to avoid allocating
-	// additional slices. If the buffer is still being used
-	// because the references were retained, then we will
-	// allocate a new buffer.
-	cr := t.allocateBuffer(l)
-	cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
-	cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+	// handle the group without aggregate case
+	if t.gc.Aggregate() == nil {
+		// Retrieve the buffer for the data to avoid allocating
+		// additional slices. If the buffer is still being used
+		// because the references were retained, then we will
+		// allocate a new buffer.
+		cr := t.allocateBuffer(l)
+		cr.cols[timeColIdx] = arrow.NewInt(a.Timestamps, t.alloc)
+		cr.cols[valueColIdx] = t.toArrowBuffer(a.Values)
+		t.appendTags(cr)
+		t.appendBounds(cr)
+		return true
+	}
+
+	// handle the group with aggregate case
+	var value bool
+	// For group count, sum, min, and max, the timestamp here is always math.MaxInt64.
+	// their final result does not contain _time, so this timestamp value can be anything
+	// and it won't matter.
+	// For group first, we need to assign the initial value to math.MaxInt64 so
+	// we can find the row with the smallest timestamp.
+	// Do not worry about data with math.MaxInt64 as its real timestamp.
+	// In OSS we require a |> range() call in the query and a math.MaxInt64 timestamp
+	// cannot make it through.
+	var timestamp int64 = math.MaxInt64
+	if t.gc.Aggregate().Type == datatypes.AggregateTypeLast {
+		timestamp = math.MinInt64
+	}
+	for {
+		// note that for the group aggregate case, l here should always be 1
+		for i := 0; i < l; i++ {
+			switch t.gc.Aggregate().Type {
+			case datatypes.AggregateTypeCount:
+				panic("unsupported for aggregate count: Boolean")
+			case datatypes.AggregateTypeSum:
+				panic("unsupported for aggregate sum: Boolean")
+			case datatypes.AggregateTypeFirst:
+				if a.Timestamps[i] < timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			case datatypes.AggregateTypeLast:
+				if a.Timestamps[i] > timestamp {
+					timestamp = a.Timestamps[i]
+					value = a.Values[i]
+				}
+			}
+		}
+		a = t.cur.Next()
+		l = a.Len()
+		if l > 0 {
+			continue
+		}
+		if !t.advanceCursor() {
+			break
+		}
+	}
+	cr := t.allocateBuffer(1)
+	cr.cols[timeColIdx] = arrow.NewInt([]int64{timestamp}, t.alloc)
+	cr.cols[valueColIdx] = t.toArrowBuffer([]bool{value})
 	t.appendTags(cr)
 	t.appendBounds(cr)
 	return true
